@@ -37,9 +37,9 @@
 ```bash
 cd F:\idea-workspase-skills\memory-ai-cleanup\scripts
 
-python run.py --discover "F:/"           # 扫全盘，自动办事
-python run.py --roots "D:/proj/a"        # 单仓
-python run.py --discover "F:/" --dry-run # 只看不动
+python run.py                       # 只清当前仓库（进哪个仓就清哪个）
+python run.py --dry-run             # 只看不动
+python run.py --all "F:/" --dry-run # 跨仓模式：先看一眼会被动什么
 ```
 
 看完 `report.md` 的「待你拍板」，回编号执行：

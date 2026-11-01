@@ -9,6 +9,7 @@
 """
 import io
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -219,6 +220,31 @@ def main(argv=None):
             rc = apply_mod.main(["--report", str(out / "report.json"),
                                  "--quarantine", str(quarantine), "--pick", "99删"])
         check("瞎编的编号被拒（退出码 2）", rc == 2, f"rc={rc}")
+
+        # ---------- 5) 口径：默认只清当前仓库，不回头扫别人的仓
+        check("从 memory-ai 内部往上能找到项目根",
+              inventory.resolve_project_root(ma / "tmp") == a.resolve(),
+              str(inventory.resolve_project_root(ma / "tmp")))
+        check("没有 memory-ai 的目录往上找不到根",
+              inventory.resolve_project_root(base / "_out") is None,
+              str(inventory.resolve_project_root(base / "_out")))
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(str(a))
+            with redirect_stdout(io.StringIO()):
+                rc = inventory.main(["--today", TODAY])
+            check("默认不给 --all 时只跑当前仓，退出码 0", rc == 0, f"rc={rc}")
+            check("默认报告落在当前仓的 memory-ai/tmp",
+                  (a / "memory-ai" / "tmp" / ("memory-ai-cleanup-" + TODAY)).is_dir())
+
+            os.chdir(str(base / "_out"))
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                rc = inventory.main(["--today", TODAY])
+            check("当前目录不在任何仓里时退出码 2（不乱扫别处）", rc == 2, f"rc={rc}")
+            check("报错里点明要用 --all", "--all" in buf.getvalue(), buf.getvalue().strip()[:60])
+        finally:
+            os.chdir(old_cwd)
 
         fail = [r for r in results if not r[1]]
         for name, ok, detail in results:

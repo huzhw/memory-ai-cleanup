@@ -8,10 +8,11 @@
 
 判档依据全部来自文件本身，不看 mtime —— 多仓文件被整批复制过，mtime 不可信。
 
-用法：
-  python inventory.py --discover F:\\               # 自动找 memory-ai 目录
-  python inventory.py --roots D:\\proj\\a --roots D:\\proj\\b
-  可选：--out <目录>  --today YYYY-MM-DD  --min-age-days N
+用法（默认只清当前仓）：
+  python inventory.py                                  # 从当前目录往上找本仓的 memory-ai
+  python inventory.py --all "F:/"                      # 跨仓模式：该根下所有 memory-ai
+  python inventory.py --roots "D:/proj/a"              # 直接指定项目根（可重复）
+  可选：--out <目录>  --today YYYY-MM-DD
 """
 import argparse
 import datetime
@@ -19,6 +20,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # ---------------------------------------------------------------- 常量
@@ -172,6 +174,29 @@ def find_memory_ai_dirs(scan_root, max_depth=4):
                 roots.append(parent)
             dirs[:] = []
     return roots
+
+
+def resolve_project_root(start=None):
+    """从当前目录往上找带 memory-ai/MEMORY.md 的项目根；找不到返回 None。
+
+    口径：技能只清「你正在干的这个仓」，所以默认从 cwd 往上找，
+    而不是掉头把整块盘扫一遍（别的仓不归这次清理管）。
+    """
+    cur = Path(start or os.getcwd()).resolve()
+    for p in [cur] + list(cur.parents):
+        ma = p / "memory-ai"
+        if ma.is_dir() and (ma / "MEMORY.md").is_file():
+            return p
+    return None
+
+
+def default_out_dir(today):
+    """报告目录：优先落当前仓的 memory-ai/tmp，当前目录不在任何仓里就落系统临时目录。"""
+    name = f"{OWN_TMP_PREFIX}{today.isoformat()}"
+    here = resolve_project_root()
+    if here is not None:
+        return here / "memory-ai" / "tmp" / name
+    return Path(tempfile.gettempdir()) / name
 
 
 def scan_records(ma_dir):
@@ -479,8 +504,9 @@ def render_report(repos, today, asks):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="memory-ai 清理 · 只读体检")
-    ap.add_argument("--discover", action="append", default=[], help="自动找 memory-ai 目录的扫描根")
+    ap = argparse.ArgumentParser(description="memory-ai 清理 · 只读体检（默认只查当前仓库）")
+    ap.add_argument("--all", "--discover", dest="all_roots", action="append", default=[],
+                    metavar="扫描根", help="跨仓模式：在该根下自动找所有 memory-ai 目录；不给就只查当前仓库")
     ap.add_argument("--roots", action="append", default=[], help="项目根（含 memory-ai 的那层）")
     ap.add_argument("--out", help="报告输出目录")
     ap.add_argument("--today", help="按哪天算天数，默认今天")
@@ -488,11 +514,19 @@ def main(argv=None):
 
     today = datetime.date.fromisoformat(args.today) if args.today else datetime.date.today()
 
-    roots = []
-    for r in args.roots:
-        roots.append(Path(r))
-    for base in args.discover:
+    roots = [Path(r) for r in args.roots]
+    for base in args.all_roots:
         roots.extend(find_memory_ai_dirs(base))
+
+    # 口径：默认只清「你正在干的这个仓」，不给 --all 就不许回头看别的仓
+    if not roots and not args.all_roots:
+        here = resolve_project_root()
+        if here is None:
+            print("当前目录及上层找不到 memory-ai/MEMORY.md —— 本技能默认只清当前仓库；"
+                  "要跨仓请显式加 --all <扫描根>")
+            return 2
+        roots = [here]
+
     roots = list(dict.fromkeys(roots))     # 去重保序
     if not roots:
         print("no memory-ai dir found")
@@ -504,7 +538,7 @@ def main(argv=None):
         repos.append(repo)
 
     asks = build_asks(repos)
-    out_dir = Path(args.out) if args.out else roots[0] / "memory-ai" / "tmp" / f"memory-ai-cleanup-{today.isoformat()}"
+    out_dir = Path(args.out) if args.out else default_out_dir(today)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "report.md").write_text(render_report(repos, today, asks), encoding="utf-8")
     plan = {"today": today.isoformat(), "out_dir": str(out_dir), "repos": repos, "ask": asks}
@@ -513,7 +547,8 @@ def main(argv=None):
 
     n_del = sum(1 for rp in repos for r in rp["records"] if r["action"] == "delete")
     n_ask = sum(1 for rp in repos for r in rp["records"] if r["action"] == "ask")
-    print(f"repos={len(repos)} delete={n_del} ask={n_ask} out={out_dir}")
+    scope = "all" if args.all_roots else ("roots" if args.roots else "current")
+    print(f"scope={scope} repos={len(repos)} delete={n_del} ask={n_ask} out={out_dir}")
     return 0
 
 
