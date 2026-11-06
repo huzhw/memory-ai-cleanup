@@ -22,6 +22,7 @@
 - [ralph](https://github.com/huzhw/ralph-skill)：PRD 转 prd.json（Ralph 自主执行格式）
 - [reread-rules](https://github.com/huzhw/reread-rules-skill)：重载 CLAUDE.md / AGENTS.md 规则
 - [ssh-transfer](https://github.com/huzhw/ssh-transfer)：服务器传文件走命令行（scp/sftp 流式，字节不进模型上下文）
+- [legacy-audit](https://github.com/huzhw/legacy-audit)：屎山体检：八套静态分析工具级联扫多仓，出新增技术债清单
 
 ## 解决了什么问题
 
